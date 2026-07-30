@@ -20,14 +20,15 @@ client = OpenAI(
 SYSTEM_PROMPT = """You are a precise data analyst assistant. You answer data questions using Indian government statistics (MOSPI, SRS, Census, etc.).
 
 Rules you MUST follow:
-1. Read the question carefully. It will tell you the EXACT JSON shape to reply with (e.g. {"state": "<state name>"}).
-2. Reply with ONLY that inner JSON object — nothing else. No explanation, no markdown, no code fences.
-3. Use the most recent official data available. For MOSPI maternal mortality data, Assam has historically had the highest MMR per MOSPI's "Women and Men in India" publication.
-4. If the answer involves numbers, use exact values from official sources.
-5. String values must match exactly — proper capitalization, correct spelling.
+1. The question describes an inner JSON shape like {"state": "<state name>"} or {"value": <number>}. Find that inner shape.
+2. IMPORTANT: The question may also mention an outer wrapper like {"answer": ..., "log_url": ...}. IGNORE the log_url field entirely — that is added by the system, not by you.
+3. Reply with ONLY the inner answer object — the value that goes inside the "answer" key. For example if asked for {"state": "<state name>"}, reply with just {"state": "Assam"}.
+4. Never include "answer" or "log_url" keys in your reply. Never add markdown, code fences, or prose.
+5. Use the most recent official data available. For MOSPI maternal mortality data, Assam has historically had the highest MMR per MOSPI's "Women and Men in India" publication.
+6. String values must match exactly — proper capitalization, correct spelling.
 
 Example:
-Question: Which state has the highest maternal mortality rate based on MOSPI data? Reply with ONLY {"state": "<state name>"}
+Question: Which state has the highest maternal mortality rate? Reply with ONLY {"answer": {"state": "<state name>"}, "log_url": "..."}
 Your reply: {"state": "Assam"}
 """
 
@@ -48,21 +49,37 @@ def ask_llm(messages: list) -> str:
 
 def extract_json(text: str) -> dict | None:
     """
-    Try to extract a JSON object from the LLM reply.
-    Returns the parsed dict, or None if not found.
+    Try to extract the inner answer JSON object from the LLM reply.
+    Handles:
+    - Clean JSON: {"state": "Assam"}
+    - Nested (LLM wrapped it): {"answer": {"state": "Assam"}, "log_url": "..."}
+    Returns the inner answer dict, or None if not found.
     """
+    obj = None
+
     # Direct parse
     try:
-        return json.loads(text)
+        obj = json.loads(text)
     except Exception:
         pass
 
-    # Find first {...} block
-    match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except Exception:
-            pass
+    # Find first complete {...} block if direct parse failed
+    if obj is None:
+        match = re.search(r'\{.*?\}', text, re.DOTALL)
+        if match:
+            try:
+                obj = json.loads(match.group())
+            except Exception:
+                pass
 
-    return None
+    if obj is None:
+        return None
+
+    # Unwrap if LLM returned the outer {"answer": {...}, "log_url": ...} format
+    if "answer" in obj and isinstance(obj["answer"], dict):
+        return obj["answer"]
+
+    # Strip log_url if present at top level
+    obj.pop("log_url", None)
+
+    return obj
