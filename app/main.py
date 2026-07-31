@@ -170,3 +170,10 @@ async def health():
 @app.get("/")
 async def root():
     return {"status": "TDS Data Analyst Bot is running", "mode": "webhook"}
+
+@app.get("/debug")
+async def debug():
+    return {
+        "token_prefix": BOT_TOKEN[:10],
+        "webhook": WEBHOOK_URL
+    }
