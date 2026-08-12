@@ -161,7 +161,7 @@ async def telegram_webhook(token: str, request: Request):
     return Response(content="ok")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Keep-alive endpoint — pin this URL in UptimeRobot every 5 minutes."""
     return {"status": "ok"}
